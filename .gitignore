@@ -1,0 +1,11 @@
+# Build output
+/gh-wiki
+/dist/
+*.exe
+
+# Local env
+.env
+.env.local
+
+# OS
+.DS_Store
