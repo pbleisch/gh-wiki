@@ -47,11 +47,11 @@ func TestTitleToFilenameRejectsUnsafeTitles(t *testing.T) {
 func TestFilenameToTitle(t *testing.T) {
 	t.Parallel()
 	tests := map[string]string{
-		"Release-process.md":        "Release process",
-		"docs/API-v2.markdown":      "API v2",
-		"One--Two.textile":          "One  Two",
-		"日本語-入門.md":               "日本語 入門",
-		"_Sidebar.md":               "_Sidebar",
+		"Release-process.md":   "Release process",
+		"docs/API-v2.markdown": "API v2",
+		"One--Two.textile":     "One  Two",
+		"日本語-入門.md":            "日本語 入門",
+		"_Sidebar.md":          "_Sidebar",
 	}
 	for filename, want := range tests {
 		filename, want := filename, want
