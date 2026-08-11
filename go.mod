@@ -2,6 +2,8 @@ module github.com/pbleisch/gh-wiki
 
 go 1.25.0
 
+toolchain go1.26.5
+
 require (
 	github.com/cli/go-gh/v2 v2.13.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
