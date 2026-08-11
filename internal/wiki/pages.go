@@ -3,27 +3,31 @@ package wiki
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
 
+// CreatePage writes an empty Markdown page for title and returns its path.
+//
+// The collision check covers the whole cache, not just its top level, because
+// GitHub's page namespace is flat: a page already committed as
+// archive/Release-notes.md occupies the title "Release notes", so creating
+// Release-notes.md would produce two files GitHub cannot tell apart.
 func (m *Manager) CreatePage(title string) (string, error) {
 	filename, err := TitleToFilename(title, ".md")
 	if err != nil {
 		return "", err
 	}
-	entries, err := os.ReadDir(m.CachePath)
+	pages, err := m.Pages()
 	if err != nil {
-		return "", fmt.Errorf("list wiki cache: %w", err)
+		return "", err
 	}
-	wantedStem := strings.TrimSuffix(filename, filepath.Ext(filename))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		stem := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-		if strings.EqualFold(stem, wantedStem) {
-			return "", fmt.Errorf("wiki page %q already exists as %s", title, entry.Name())
+	wanted := strings.TrimSuffix(filename, filepath.Ext(filename))
+	for _, page := range pages {
+		base := path.Base(page.Path)
+		if strings.EqualFold(strings.TrimSuffix(base, path.Ext(base)), wanted) {
+			return "", fmt.Errorf("wiki page %q already exists as %s", title, page.Path)
 		}
 	}
 	path := filepath.Join(m.CachePath, filename)

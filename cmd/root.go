@@ -3,13 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
-	"github.com/paul/gh-wiki/internal/wiki"
+	"github.com/pbleisch/gh-wiki/internal/wiki"
 	"github.com/spf13/cobra"
 )
-
-var version = "dev"
 
 type options struct {
 	repository string
@@ -17,6 +17,7 @@ type options struct {
 
 func Execute() error {
 	opts := &options{}
+	buildInfo, hasBuildInfo := debug.ReadBuildInfo()
 	root := &cobra.Command{
 		Use:   "gh-wiki",
 		Short: "Work with a GitHub repository wiki from a managed local cache",
@@ -25,20 +26,28 @@ func Execute() error {
 		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Version:       version,
+		Version:       resolveVersion(version, buildInfo, hasBuildInfo),
 		Long: `Work with a GitHub wiki as local files.
 
-The wiki is cloned into a per-repository cache on first use. Commands use the
-repository in the current directory unless --repo names another repository.`,
-		Example: `  gh wiki edit
+A GitHub wiki is a separate Git repository. This extension keeps one clone of it
+per repository in your user cache directory, opens that clone in your editor,
+and reconciles remote changes before pushing so concurrent edits are never lost.
+
+Commands use the repository in the current directory unless --repo names another
+repository. Progress messages go to standard error, so 'list', 'path', and
+'status' can be read by other programs.`,
+		Example: `  gh wiki list
+  gh wiki edit
   gh wiki edit --code
   gh wiki new "Release process"
-  gh wiki push -m "Document the release process"`,
+  gh wiki push -m "Document the release process"
+  gh wiki status --repo cli/cli`,
 	}
 	root.SetOut(os.Stdout)
 	root.SetErr(os.Stderr)
 	root.PersistentFlags().StringVarP(&opts.repository, "repo", "R", "", "Select another repository using [HOST/]OWNER/REPO")
 	root.AddCommand(
+		newListCommand(opts),
 		newSyncCommand(opts),
 		newEditCommand(opts),
 		newPageCommand(opts),
@@ -66,6 +75,68 @@ func managerFor(opts *options) (*wiki.Manager, error) {
 		return nil, err
 	}
 	return wiki.NewManager(wiki.Repo{Host: resolved.Host, Owner: resolved.Owner, Name: resolved.Name}, root, os.Stdout, os.Stderr)
+}
+
+func newListCommand(opts *options) *cobra.Command {
+	var noFetch bool
+	var showFiles bool
+	var all bool
+	command := &cobra.Command{
+		Use:   "list",
+		Short: "List the wiki's pages",
+		Long: `List the wiki's pages, one per line and sorted by title.
+
+GitHub identifies a wiki page by its filename alone. A page committed inside a
+directory is therefore listed under its own title with no directory prefix, and
+two files whose names differ only by directory, capitalization, or markup
+extension name the same GitHub page; those are reported as warnings on standard
+error because GitHub serves only one of them.`,
+		Example: `  gh wiki list
+  gh wiki list --files
+  gh wiki list --no-fetch --repo cli/cli`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			manager, err := managerFor(opts)
+			if err != nil {
+				return err
+			}
+			if err := manager.Ensure(); err != nil {
+				return err
+			}
+			if !noFetch {
+				if _, err := manager.Sync(); err != nil {
+					fmt.Fprintln(os.Stderr, "warning:", err)
+					fmt.Fprintln(os.Stderr, "warning: listing the preserved local cache anyway")
+				}
+			}
+			pages, err := manager.Pages()
+			if err != nil {
+				return err
+			}
+			for _, group := range wiki.Collisions(pages) {
+				paths := make([]string, 0, len(group))
+				for _, page := range group {
+					paths = append(paths, page.Path)
+				}
+				fmt.Fprintf(os.Stderr, "warning: %s name the same wiki page %q; GitHub serves only one of them\n", strings.Join(paths, " and "), group[0].Title)
+			}
+			for _, page := range pages {
+				if page.Special != "" && !all {
+					continue
+				}
+				if showFiles {
+					fmt.Fprintln(os.Stdout, page.Path)
+					continue
+				}
+				fmt.Fprintln(os.Stdout, page.Title)
+			}
+			return nil
+		},
+	}
+	command.Flags().BoolVar(&showFiles, "files", false, "Print each page's file path instead of its title")
+	command.Flags().BoolVar(&all, "all", false, "Include GitHub's _Sidebar and _Footer layout files")
+	command.Flags().BoolVar(&noFetch, "no-fetch", false, "List the cached pages without contacting GitHub")
+	return command
 }
 
 func newSyncCommand(opts *options) *cobra.Command {
@@ -111,7 +182,15 @@ func newPageCommand(opts *options) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "new TITLE",
 		Short: "Create a Markdown wiki page and open it in your editor",
-		Args:  cobra.ExactArgs(1),
+		Long: `Create a Markdown wiki page and open it in your editor.
+
+TITLE is converted to the filename GitHub expects: spaces become hyphens, so
+"Release process" is created as Release-process.md. GitHub does not allow
+\ / : * ? " < > | in a wiki title and its own editor silently strips them, so
+this command reports the problem instead of renaming the page for you.`,
+		Example: `  gh wiki new "Release process"
+  gh wiki new Home --no-edit`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			manager, err := managerFor(opts)
 			if err != nil {

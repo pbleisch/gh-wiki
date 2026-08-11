@@ -21,6 +21,11 @@ type Repo struct {
 	Name  string
 }
 
+// Manager owns one wiki cache. Out carries the standard output of programs the
+// manager runs - the editor, and Git when it needs a terminal - while every
+// message the manager writes itself goes to Err. Commands that print data, such
+// as the cache path or the page list, therefore keep a clean standard output
+// even when a clone or a sync narrates progress.
 type Manager struct {
 	Repo      Repo
 	CachePath string
@@ -94,7 +99,7 @@ func (m *Manager) Ensure() error {
 			return fmt.Errorf("clone wiki (it may not have an initial page yet): %w", err)
 		}
 	}
-	fmt.Fprintf(m.Out, "Cached %s/%s wiki at %s\n", m.Repo.Owner, m.Repo.Name, m.CachePath)
+	fmt.Fprintf(m.Err, "Cached %s/%s wiki at %s\n", m.Repo.Owner, m.Repo.Name, m.CachePath)
 	return nil
 }
 
@@ -153,16 +158,16 @@ func (m *Manager) Sync() (Snapshot, error) {
 		if _, err := m.git.output(m.CachePath, false, "", "merge", "--ff-only", "@{upstream}"); err != nil {
 			return snapshot, fmt.Errorf("fast-forward wiki cache: %w", err)
 		}
-		fmt.Fprintf(m.Out, "Updated %s (%d new commit(s)).\n", m.CachePath, snapshot.Behind)
+		fmt.Fprintf(m.Err, "Updated %s (%d new commit(s)).\n", m.CachePath, snapshot.Behind)
 		snapshot.Behind = 0
 	case SyncDirtyBehind:
 		return snapshot, fmt.Errorf("remote has %d new commit(s), but the cache has uncommitted edits; your edits were left untouched - run 'gh wiki push' to commit and reconcile them", snapshot.Behind)
 	case SyncDiverged:
 		return snapshot, fmt.Errorf("local and remote wiki histories diverged (%d ahead, %d behind); nothing was changed - run 'gh wiki push' to rebase and publish local commits", snapshot.Ahead, snapshot.Behind)
 	case SyncAhead:
-		fmt.Fprintf(m.Out, "Cache is %d commit(s) ahead; run 'gh wiki push' to publish.\n", snapshot.Ahead)
+		fmt.Fprintf(m.Err, "Cache is %d commit(s) ahead; run 'gh wiki push' to publish.\n", snapshot.Ahead)
 	case SyncCurrent:
-		fmt.Fprintln(m.Out, "Wiki cache is up to date.")
+		fmt.Fprintln(m.Err, "Wiki cache is up to date.")
 	}
 	return snapshot, nil
 }
@@ -190,7 +195,7 @@ func (m *Manager) Commit(message string) error {
 		}
 		return nil
 	}
-	fmt.Fprintln(m.Out, "Enter a commit message for the wiki edits.")
+	fmt.Fprintln(m.Err, "Enter a commit message for the wiki edits.")
 	if err := m.git.stream(m.CachePath, false, "", "commit"); err != nil {
 		return fmt.Errorf("commit wiki edits: %w", err)
 	}
@@ -215,14 +220,14 @@ func (m *Manager) Push(message string) error {
 		return err
 	}
 	if snapshot.Ahead == 0 {
-		fmt.Fprintln(m.Out, "Nothing to push; wiki is up to date.")
+		fmt.Fprintln(m.Err, "Nothing to push; wiki is up to date.")
 		return nil
 	}
 	if err := m.pushOnce(snapshot.Branch); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "non-fast-forward") && !strings.Contains(strings.ToLower(err.Error()), "fetch first") {
 			return err
 		}
-		fmt.Fprintln(m.Out, "Remote changed during push; fetching and replaying local commits once.")
+		fmt.Fprintln(m.Err, "Remote changed during push; fetching and replaying local commits once.")
 		if err := m.Fetch(); err != nil {
 			return err
 		}
@@ -233,7 +238,7 @@ func (m *Manager) Push(message string) error {
 			return fmt.Errorf("push still failed after reconciling once; no local work was discarded: %w", err)
 		}
 	}
-	fmt.Fprintf(m.Out, "Pushed wiki changes to %s/%s.\n", m.Repo.Owner, m.Repo.Name)
+	fmt.Fprintf(m.Err, "Pushed wiki changes to %s/%s.\n", m.Repo.Owner, m.Repo.Name)
 	return nil
 }
 
@@ -254,7 +259,7 @@ func (m *Manager) reconcile() error {
 		}
 		return nil
 	}
-	fmt.Fprintf(m.Out, "Remote has %d new commit(s); replaying %d local commit(s) on top.\n", snapshot.Behind, snapshot.Ahead)
+	fmt.Fprintf(m.Err, "Remote has %d new commit(s); replaying %d local commit(s) on top.\n", snapshot.Behind, snapshot.Ahead)
 	if err := m.git.stream(m.CachePath, false, "", "rebase", "@{upstream}"); err != nil {
 		return fmt.Errorf("rebase stopped because changes conflict; your work is preserved in %s - resolve files, run 'git -C %q rebase --continue', then run 'gh wiki push' again", m.CachePath, m.CachePath)
 	}

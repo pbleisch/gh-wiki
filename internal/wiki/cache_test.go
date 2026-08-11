@@ -17,7 +17,7 @@ func TestCachePathKeysByRepository(t *testing.T) {
 		t.Errorf("CachePath() = %q, want %q", got, want)
 	}
 
-	other, err := CachePath(root, "example.com", "OctoCat", "Hello-World")
+	other, err := CachePath(root, "github.example", "OctoCat", "Hello-World")
 	if err != nil {
 		t.Fatal(err)
 	}

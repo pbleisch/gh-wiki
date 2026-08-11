@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/auth"
-	"github.com/paul/gh-wiki/cmd"
+	"github.com/pbleisch/gh-wiki/cmd"
 )
 
 func main() {

@@ -1,6 +1,9 @@
 package wiki
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTitleToFilename(t *testing.T) {
 	t.Parallel()
@@ -44,14 +47,32 @@ func TestTitleToFilenameRejectsUnsafeTitles(t *testing.T) {
 	}
 }
 
+// GitHub documents \ / : * ? " < > | as characters not to use in a wiki title,
+// and its own editor strips a typed slash rather than nesting the page. A
+// directory in a wiki repository is not a page hierarchy either, so a slash is
+// rejected with an explanation instead of being rewritten.
+func TestTitleToFilenameExplainsSlashes(t *testing.T) {
+	t.Parallel()
+	_, err := TitleToFilename("Tutorials/Getting started", ".md")
+	if err == nil {
+		t.Fatal("TitleToFilename() with a slash unexpectedly succeeded")
+	}
+	for _, want := range []string{"'/'", "filename alone"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("TitleToFilename() error = %v, want it to mention %q", err, want)
+		}
+	}
+}
+
 func TestFilenameToTitle(t *testing.T) {
 	t.Parallel()
 	tests := map[string]string{
-		"Release-process.md":   "Release process",
-		"docs/API-v2.markdown": "API v2",
-		"One--Two.textile":     "One  Two",
-		"日本語-入門.md":            "日本語 入門",
-		"_Sidebar.md":          "_Sidebar",
+		"Release-process.md":             "Release process",
+		"docs/API-v2.markdown":           "API v2",
+		"archive/subfolder/Old-notes.md": "Old notes",
+		"One--Two.textile":               "One  Two",
+		"日本語-入門.md":                      "日本語 入門",
+		"_Sidebar.md":                    "_Sidebar",
 	}
 	for filename, want := range tests {
 		filename, want := filename, want

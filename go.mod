@@ -1,6 +1,6 @@
-module github.com/paul/gh-wiki
+module github.com/pbleisch/gh-wiki
 
-go 1.26
+go 1.25.0
 
 require (
 	github.com/cli/go-gh/v2 v2.13.0
