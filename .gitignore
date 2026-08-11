@@ -3,9 +3,16 @@
 /dist/
 *.exe
 
+# Test and coverage output
+*.test
+*.out
+
 # Local env
 .env
 .env.local
+
+# Local agent config
+.claude/settings.local.json
 
 # OS
 .DS_Store

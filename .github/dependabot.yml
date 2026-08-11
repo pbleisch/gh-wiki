@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # The release workflow runs with contents: write and publishes the binaries
+  # people install, so keeping its actions current matters more than the Go
+  # dependencies do.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
