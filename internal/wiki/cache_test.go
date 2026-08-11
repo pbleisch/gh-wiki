@@ -28,11 +28,11 @@ func TestCachePathKeysByRepository(t *testing.T) {
 
 func TestCachePathEscapesUnsafeSegments(t *testing.T) {
 	t.Parallel()
-	got, err := CachePath("cache", "github.example:8443", "owner/name", "repo")
+	got, err := CachePath("cache", "github.example:8443", `owner/name\team`, "repo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join("cache", "github.example%3A8443", "owner%2Fname", "repo")
+	want := filepath.Join("cache", "github.example%3A8443", "owner%2Fname%5Cteam", "repo")
 	if got != want {
 		t.Errorf("CachePath() = %q, want %q", got, want)
 	}

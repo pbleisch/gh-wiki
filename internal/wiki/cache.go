@@ -35,7 +35,7 @@ func CachePath(root, host, owner, repo string) (string, error) {
 		part = strings.ToLower(part)
 		part = url.PathEscape(part)
 		part = strings.ReplaceAll(part, ":", "%3A")
-		part = strings.ReplaceAll(part, `\\`, "%5C")
+		part = strings.ReplaceAll(part, `\`, "%5C")
 		parts[i] = part
 	}
 	return filepath.Join(root, parts[0], parts[1], parts[2]), nil

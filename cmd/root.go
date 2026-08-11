@@ -18,8 +18,11 @@ type options struct {
 func Execute() error {
 	opts := &options{}
 	root := &cobra.Command{
-		Use:           "gh wiki",
-		Short:         "Work with a GitHub repository wiki from a managed local cache",
+		Use:   "gh-wiki",
+		Short: "Work with a GitHub repository wiki from a managed local cache",
+		Annotations: map[string]string{
+			cobra.CommandDisplayNameAnnotation: "gh wiki",
+		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       version,
