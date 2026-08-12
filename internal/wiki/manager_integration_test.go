@@ -2,6 +2,8 @@ package wiki
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,7 +104,9 @@ func TestPushCommitsAndRebasesOntoRemoteChanges(t *testing.T) {
 // is exempted from conversion in both directions, and a page committed with LF
 // is converted to CRLF on checkout and back to LF on commit. The tool must not
 // disturb that by pinning core.autocrlf, setting core.eol, or writing a
-// .gitattributes into someone else's wiki; if it ever does, this test fails.
+// .gitattributes into someone else's wiki. This test fails if it ever does so to
+// an established cache; TestCloneLeavesLineEndingConfigurationAlone covers the
+// clone that creates one.
 func TestPushPreservesRemoteLineEndings(t *testing.T) {
 	fixture := newGitFixtureWithCacheAutocrlf(t, "true")
 	fixture.remoteCommit("Crlf.md", "alpha\r\nbeta\r\n", "page saved with CRLF")
@@ -159,6 +163,73 @@ func TestPushWritesCreatedPagesWithLineFeeds(t *testing.T) {
 	}
 }
 
+// TestCloneLeavesLineEndingConfigurationAlone drives the clone the tool itself
+// issues, rather than one a fixture built, and proves the cache it creates
+// carries no line-ending pin. Every other test in this file starts from an
+// already-cloned cache, which Manager.Ensure short-circuits on, so this is the
+// only place the clone's own arguments are under test.
+func TestCloneLeavesLineEndingConfigurationAlone(t *testing.T) {
+	fixture := newGitFixture(t)
+	manager := fixture.manager()
+	manager.CachePath = filepath.Join(t.TempDir(), "fresh")
+	if err := manager.cloneInto(fixture.remote); err != nil {
+		t.Fatal(err)
+	}
+	// Guard the guard: a clone that checked nothing out would satisfy the
+	// .gitattributes sweep below without proving anything.
+	if _, err := os.Stat(filepath.Join(manager.CachePath, "Home.md")); err != nil {
+		t.Fatalf("clone produced no working tree: %v", err)
+	}
+
+	// --local specifically: an ambient global core.autocrlf=true is legitimate,
+	// and on Windows it is the installer default.
+	for _, key := range []string{"core.autocrlf", "core.eol"} {
+		if value, set := localGitConfig(t, manager.CachePath, key); set {
+			t.Errorf("clone set %s=%q; the tool must leave Git's own default in place", key, value)
+		}
+	}
+
+	if err := filepath.WalkDir(manager.CachePath, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == ".gitattributes" {
+			t.Errorf("clone wrote %s; the tool must not add attributes to someone else's wiki", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// localGitConfig reports a repository-local setting and whether it is set at all.
+// Git exits 1 with no output for a key it cannot find, which is the answer these
+// assertions want rather than a failure.
+func localGitConfig(t *testing.T, dir, key string) (string, bool) {
+	t.Helper()
+	command := exec.Command("git", "-C", dir, "config", "--local", "--get", key)
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	err := command.Run()
+	value := strings.TrimSpace(stdout.String())
+	if err == nil {
+		return value, true
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && value == "" {
+		return "", false
+	}
+	t.Fatalf("read %s from %s: %v\n%s", key, dir, err, stderr.String())
+	return "", false
+}
+
 // normalizeEOL collapses CRLF to LF so an assertion about a page's lines does
 // not become an assertion about the platform's checkout convention.
 func normalizeEOL(s string) string {
@@ -202,15 +273,13 @@ func newGitFixtureWithCacheAutocrlf(t *testing.T, cacheAutocrlf string) *gitFixt
 	fixture.run(fixture.seed, "commit", "-m", "initial page")
 	fixture.run(fixture.seed, "remote", "add", "origin", fixture.remote)
 	fixture.run(fixture.seed, "push", "-u", "origin", "main")
-	cloneArgs := []string{"clone", fixture.remote, fixture.cache}
+	cloneArgs := []string{"clone"}
 	if cacheAutocrlf != "" {
-		cloneArgs = append([]string{"-c", "core.autocrlf=" + cacheAutocrlf}, cloneArgs...)
+		cloneArgs = append(cloneArgs, "-c", "core.autocrlf="+cacheAutocrlf)
 	}
+	cloneArgs = append(cloneArgs, fixture.remote, fixture.cache)
 	fixture.run("", cloneArgs...)
 	fixture.configure(fixture.cache)
-	if cacheAutocrlf != "" {
-		fixture.run(fixture.cache, "config", "core.autocrlf", cacheAutocrlf)
-	}
 	return fixture
 }
 

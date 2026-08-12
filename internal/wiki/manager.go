@@ -85,7 +85,19 @@ func (m *Manager) Ensure() error {
 	if err := os.MkdirAll(filepath.Dir(m.CachePath), 0o700); err != nil {
 		return fmt.Errorf("create cache parent: %w", err)
 	}
-	if _, err := m.git.output("", true, m.Repo.Host, "clone", "--origin", "origin", m.cloneURL(), m.CachePath); err != nil {
+	if err := m.cloneInto(m.cloneURL()); err != nil {
+		return err
+	}
+	fmt.Fprintf(m.Err, "Cached %s/%s wiki at %s\n", m.Repo.Owner, m.Repo.Name, m.CachePath)
+	return nil
+}
+
+// cloneInto creates the cache at m.CachePath from url. It is the only place the
+// tool builds a wiki clone, so it is also the only place a line-ending pin could
+// enter one; TestCloneLeavesLineEndingConfigurationAlone drives it to prove none
+// does.
+func (m *Manager) cloneInto(url string) error {
+	if _, err := m.git.output("", true, m.Repo.Host, "clone", "--origin", "origin", url, m.CachePath); err != nil {
 		_ = os.RemoveAll(m.CachePath)
 		message := strings.ToLower(err.Error())
 		switch {
@@ -99,7 +111,6 @@ func (m *Manager) Ensure() error {
 			return fmt.Errorf("clone wiki (it may not have an initial page yet): %w", err)
 		}
 	}
-	fmt.Fprintf(m.Err, "Cached %s/%s wiki at %s\n", m.Repo.Owner, m.Repo.Name, m.CachePath)
 	return nil
 }
 
